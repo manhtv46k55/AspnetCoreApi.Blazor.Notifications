@@ -1,0 +1,138 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+@using BlazorBootstrap
+@implements IAsyncDisposable
+@using System.Text.Json
+<PageTitle>Index</PageTitle>
+
+<Tabs>
+    <!-- Tabs definition as per your original code -->
+    <!-- For brevity, only the 'About' tab content is shown where the Grid is located -->
+    <Tab Title="Home" Active="true">
+        <Content>
+            <Button Color="ButtonColor.Primary"><Icon Name="IconName.Alarm" /> Button </Button>
+            <Button Color="ButtonColor.Success"><Icon Name="IconName.Alarm" /> Button </Button>
+            <Button Color="ButtonColor.Danger" Outline="true"><Icon Name="IconName.AlarmFill" /> Button </Button>
+        </Content>
+    </Tab>
+    <Tab Title="Profile">
+        <Content>
+            <ul>
+                @foreach (var message in _messages)
+                {
+                    <li>@message</li>
+                }
+            </ul>
+            <Toasts class="p-3" Messages="messages" Delay="5000" Placement="ToastsPlacement.TopRight" />
+        </Content>
+    </Tab>
+    <Tab Title="About">
+        <Content>
+            <table class="table table-hover table-bordered">
+                <thead>
+                    <tr>
+                        <th>Id</th>
+                        <th>Name</th>
+                        <th>Designation</th>
+                        <th>DOJ</th>
+                        <th>Active</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var emp in employees)
+                    {
+                        <tr>
+                            <td>@emp.Id</td>
+                            <td>@emp.Name</td>
+                            <td>@emp.Designation</td>
+                            <td>@emp.DOJ.ToString("yyyy-MM-dd")</td>
+                            <td>@(emp.IsActive ? "Active" : "Inactive")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </Content>
+    </Tab>
+</Tabs>
+@code {
+    private List<Employee> employees = new();
+    private HashSet<Employee> selectedEmployees = new();
+    private HubConnection? _hubConnection;
+    private readonly List<string> _messages = new();
+    List<ToastMessage> messages = new List<ToastMessage>();
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize SignalR connection
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl("https://localhost:7254/notifications",
+                o => o.AccessTokenProvider = () => Task.FromResult<string?>("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6ImY0NWZlNDc1LTg0NjYtNDg0Zi1hZjY5LWEyNjU4YThlZTkxNSIsInN1YiI6ImY0NWZlNDc1LTg0NjYtNDg0Zi1hZjY5LWEyNjU4YThlZTkxNSIsImp0aSI6Ijk0ZDEyYTQiLCJhdWQiOlsiaHR0cDovL2xvY2FsaG9zdDo2MTcxMSIsImh0dHBzOi8vbG9jYWxob3N0OjQ0Mzc4IiwiaHR0cDovL2xvY2FsaG9zdDo1MDI2IiwiaHR0cHM6Ly9sb2NhbGhvc3Q6NzI1NCJdLCJuYmYiOjE3MTg3MDQ0NzYsImV4cCI6MTcyNjY1MzI3NiwiaWF0IjoxNzE4NzA0NDc2LCJpc3MiOiJkb3RuZXQtdXNlci1qd3RzIn0.EfuIKUisdg_PFzW99A9gye0HbspnbnlLf3kbB9lKsf8"))
+            .Build();
+
+        // Handle 'ReceiveNotification' event
+        _hubConnection.On<string>("ReceiveNotification", async e =>
+        {
+            // Deserialize JSON string to Employee object
+            var employee = JsonSerializer.Deserialize<Employee>(e, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true // Ignore case when mapping properties
+            });
+
+            if (employee != null)
+            {
+                // Add new employee to the list
+                employees.Add(employee);
+
+                // Show toast message
+                ShowMessage(ToastType.Success, $"New employee received: {employee.Name}");
+
+                // Update UI
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+
+        // Start the SignalR connection
+        await _hubConnection.StartAsync();
+    }
+
+    // Method to show toast message
+    private void ShowMessage(ToastType toastType, string message)
+    {
+        messages.Add(CreateToastMessage(toastType, message));
+    }
+
+    // Method to create toast message
+    private ToastMessage CreateToastMessage(ToastType toastType, string message)
+    {
+        return new ToastMessage
+        {
+            Type = toastType,
+            Title = "Notification",
+            Message = message,
+            HelpText = DateTime.Now.ToString(),
+            AutoHide = true // Auto-hide for all messages
+        };
+    }
+
+    // Dispose method to clean up SignalR connection
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    // Data provider method for the Grid
+    private async Task<GridDataProviderResult<Employee>> EmployeesDataProvider(GridDataProviderRequest<Employee> request)
+    {
+        // Apply filtering, paging, sorting, etc. to the employees list
+        return await Task.FromResult(request.ApplyTo(employees));
+    }
+
+    // Method to handle selection change in the Grid
+    private Task OnSelectedItemsChanged(HashSet<Employee> employees)
+    {
+        selectedEmployees = employees ?? new HashSet<Employee>();
+        return Task.CompletedTask;
+    }
+}
